@@ -1,58 +1,63 @@
 import streamlit as st
 import pytesseract
-from PIL import ImageGrab, Image
+from PIL import Image
 import io
-import os
-
-# Streamlit Cloud에서 Tesseract 설치 (필요한 경우)
-if not os.path.exists("/usr/bin/tesseract"):
-    os.system("apt-get install -y tesseract-ocr")
-    os.system("apt-get install -y libtesseract-dev")
-    os.system("apt-get install -y tesseract-ocr-kor")
+import platform
+import base64
 
 # Tesseract 설정
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Windows 경로
-if not os.path.exists(pytesseract.pytesseract.tesseract_cmd):
-    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Streamlit Cloud 경로
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+else:
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-def get_clipboard_image():
+def get_image_from_clipboard_windows():
+    import win32clipboard
+    
+    win32clipboard.OpenClipboard()
     try:
-        image = ImageGrab.grabclipboard()
-        if image is not None:
-            # PIL Image를 bytes로 변환
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='PNG')
-            return img_byte_arr.getvalue()
-        else:
-            return None
-    except Exception as e:
-        st.error(f"클립보드에서 이미지를 가져오는 중 오류 발생: {e}")
-        return None
+        if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
+            data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
+            return Image.open(io.BytesIO(data[14:]))  # Skip the BITMAPINFO header
+    finally:
+        win32clipboard.CloseClipboard()
+    return None
 
 def extract_text_from_image(image):
     text = pytesseract.image_to_string(image, lang='kor+eng')
     return text
 
 def main():
-    st.title("Windows 클립보드 이미지 텍스트 추출기")
+    st.title("이미지 텍스트 추출기")
 
-    st.write("1. 원하는 영역을 캡처하세요 (예: Win + Shift + S)")
-    st.write("2. 아래 '클립보드에서 이미지 가져오기' 버튼을 클릭하세요")
-
-    if st.button("클립보드에서 이미지 가져오기"):
-        img_bytes = get_clipboard_image()
-        if img_bytes is not None:
-            image = Image.open(io.BytesIO(img_bytes))
-            st.image(image, caption="클립보드에서 가져온 이미지", use_column_width=True)
-            
+    if platform.system() == "Windows":
+        st.write("1. 원하는 영역을 캡처하세요 (예: Win + Shift + S)")
+        st.write("2. '클립보드에서 이미지 가져오기' 버튼을 클릭하세요")
+        
+        if st.button("클립보드에서 이미지 가져오기"):
+            image = get_image_from_clipboard_windows()
+            if image:
+                st.image(image, caption="클립보드에서 가져온 이미지", use_column_width=True)
+                if st.button("텍스트 추출"):
+                    text = extract_text_from_image(image)
+                    st.write("추출된 텍스트:")
+                    st.text_area("", value=text, height=300)
+            else:
+                st.warning("클립보드에 이미지가 없거나 이미지를 가져오는데 실패했습니다.")
+    else:
+        st.write("이 기능은 Windows에서만 사용 가능합니다.")
+        st.write("대신 이미지 파일을 직접 업로드해주세요.")
+    
+    st.write("또는 이미지 파일을 직접 업로드하세요:")
+    uploaded_file = st.file_uploader("이미지 파일 선택", type=["png", "jpg", "jpeg"])
+    
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="업로드된 이미지", use_column_width=True)
+        if st.button("업로드된 이미지에서 텍스트 추출"):
             text = extract_text_from_image(image)
-            
             st.write("추출된 텍스트:")
             st.text_area("", value=text, height=300)
-        else:
-            st.warning("클립보드에 이미지가 없거나 이미지를 가져오는데 실패했습니다.")
-
-    st.write("참고: 이 앱은 Windows에서 최적화되어 있습니다. 다른 운영 체제에서는 제대로 작동하지 않을 수 있습니다.")
 
 if __name__ == "__main__":
     main()
